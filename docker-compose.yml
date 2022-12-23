@@ -1,0 +1,101 @@
+version: "3.9"
+
+networks:
+  default:
+
+x-common: &common
+  logging:
+    driver: json-file
+    options:
+      max-size: 1M
+  networks:
+    - default
+
+services:
+
+  traefik:
+    container_name: phpxam_traefik
+    image: traefik:latest
+    command:
+      - --providers.docker=true
+      # Features
+      - --api=true
+      - --api.dashboard=true
+    <<: *common
+    ports:
+      - 80:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - default
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.traefik: "true"
+      traefik.http.routers.traefik.service: "api@internal"
+      traefik.http.services.traefik.loadbalancer.server.port: "8080"
+      traefik.http.routers.traefik.rule: "Host(`traefik.exam.softing.pro`)"
+
+  adminer:
+    container_name: phpxam_adminer
+    image: adminer:latest
+    <<: *common
+    environment:
+      ADMINER_DEFAULT_SERVER: "mysql"
+      ADMINER_DESIGN: "ng9"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.adminer.service: "adminer"
+      traefik.http.services.adminer.loadbalancer.server.port: "8080"
+      traefik.http.routers.adminer.rule: "Host(`adminer.exam.softing.pro`)"
+
+  code:
+    container_name: phpxam_code
+    image: codercom/code-server
+    <<: *common
+    environment:
+      - PASSWORD=code
+    volumes:
+      - ./workdir:/home/coder/project/
+      - ./data:/data/code
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.code.service: "code"
+      traefik.http.services.code.loadbalancer.server.port: "8080"
+      traefik.http.routers.code.rule: "Host(`code.exam.softing.pro`)"
+
+  mysql:
+    container_name: phpxam_mysql
+    image: mariadb:latest
+    <<: *common
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_PASSWORD: "mysql"
+      MYSQL_DATABASE: "mysql"
+    ports:
+      - 3306:3306
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./etc/mysql:/docker-entrypoint-initdb.d
+    privileged: true
+
+  nginx:
+    container_name: phpxam_nginx
+    image: nginx:stable-alpine
+    <<: *common
+    volumes:
+      - ./etc/default.conf.template:/etc/nginx/templates/default.conf.template
+      - ./workdir:/var/www/html
+    depends_on:
+      - php
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.nginx.service: "nginx"
+      traefik.http.services.nginx.loadbalancer.server.port: "80"
+      traefik.http.routers.nginx.rule: "Host(`php.exam.softing.pro`)"
+
+  php:
+    container_name: phpxam_php
+    image: php:fpm-alpine
+    <<: *common
+    volumes:
+      - ./workdir:/var/www/html
